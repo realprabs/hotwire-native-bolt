@@ -10,16 +10,8 @@
 		"verbatimModuleSyntax": true,
 		"declaration": true,
 		"sourceMap": true,
-		"lib": [
-			"ES2024",
-			"DOM"
-		]
+		"lib": ["ES2024", "DOM"]
 	},
-	"include": [
-		"src"
-	],
-	"exclude": [
-		"dist",
-		"node_modules"
-	]
+	"include": ["src"],
+	"exclude": ["dist", "node_modules"]
 }

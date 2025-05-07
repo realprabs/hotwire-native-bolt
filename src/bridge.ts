@@ -71,9 +71,7 @@ export class Bridge {
 	}
 
 	removePendingMessagesFor(component: string) {
-		this.#pendingMessages = this.#pendingMessages.filter(
-			(message) => message.component != component
-		)
+		this.#pendingMessages = this.#pendingMessages.filter((message) => message.component !== component)
 	}
 
 	generateMessageId() {
@@ -92,14 +90,11 @@ export class Bridge {
 
 	adapterDidUpdateSupportedComponents() {
 		if (this.#adapter) {
-			document.documentElement.dataset.bridgeComponents =
-				this.#adapter.supportedComponents.join(' ')
+			document.documentElement.dataset.bridgeComponents = this.#adapter.supportedComponents.join(' ')
 		}
 	}
 
-	#savePendingMessage(
-		message: Omit<BridgeMessage, 'id'> & { callback?: BridgeMessageCallback }
-	) {
+	#savePendingMessage(message: Omit<BridgeMessage, 'id'> & { callback?: BridgeMessageCallback }) {
 		this.#pendingMessages.push(message)
 	}
 

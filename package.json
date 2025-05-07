@@ -1,41 +1,46 @@
 {
-    "version": "0.1.0",
-    "license": "MIT",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
-    "type": "module",
-    "files": [
-        "dist",
-        "src"
-    ],
-    "scripts": {
-        "dev": "rollup -c -w",
-        "clean": "rm -rf dist",
-        "build": "npm run clean && rollup -c",
-        "lint": "eslint 'src/**/*.{ts,tsx}'",
-        "format": "prettier --write .",
-        "prepare": "npm run build",
-        "postinstall": "husky install"
-    },
-    "husky": {
-        "hooks": {
-            "pre-commit": "npm run lint && npm run format"
-        }
-    },
-    "prettier": {
-        "useTabs": true,
-        "printWidth": 120,
-        "semi": false,
-        "singleQuote": true,
-        "trailingComma": "es5"
-    },
-    "name": "hotwire-native-bolt",
-    "author": "Prabhakar Bhat",
-    "devDependencies": {
-        "@rollup/plugin-node-resolve": "^16.0.1",
-        "husky": "^9.1.7",
-        "prettier": "^3.5.3",
-        "rollup-plugin-typescript2": "^0.36.0",
-        "typescript": "^5.8.3"
-    }
+	"version": "0.1.0",
+	"license": "MIT",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"type": "module",
+	"files": [
+		"dist",
+		"src"
+	],
+	"scripts": {
+		"dev": "rollup -c -w",
+		"clean": "rm -rf dist",
+		"build": "npm run clean && rollup -c",
+		"lint": "eslint 'src/**/*.{ts,tsx}'",
+		"format": "prettier --write .",
+		"prepare": "npm run build",
+		"postinstall": "husky install"
+	},
+	"husky": {
+		"hooks": {
+			"pre-commit": "npm run lint && npm run format"
+		}
+	},
+	"prettier": {
+		"useTabs": true,
+		"printWidth": 120,
+		"semi": false,
+		"singleQuote": true,
+		"trailingComma": "es5"
+	},
+	"name": "hotwire-native-bolt",
+	"author": "Prabhakar Bhat",
+	"devDependencies": {
+		"@rollup/plugin-node-resolve": "^16.0.1",
+		"@typescript-eslint/eslint-plugin": "^8.32.0",
+		"@typescript-eslint/parser": "^8.32.0",
+		"eslint": "^9.26.0",
+		"eslint-config-prettier": "^10.1.3",
+		"husky": "^9.1.7",
+		"prettier": "^3.5.3",
+		"rollup-plugin-typescript2": "^0.36.0",
+		"typescript": "^5.8.3",
+		"typescript-eslint": "^8.32.0"
+	}
 }

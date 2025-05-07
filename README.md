@@ -20,30 +20,30 @@ yarn add hotwire-native-bolt
 
 ```javascript
 // The library automatically sets up the bridge when imported
-import 'hotwire-native-bolt';
+import 'hotwire-native-bolt'
 
 // Access the navigator
-const navigator = window.HotwireNavigator;
+const navigator = window.HotwireNavigator
 
 // Set up visit handlers
 navigator.setStartVisitHandler(async (location, restorationId, options) => {
-  // Navigate and render content
-});
+	// Navigate and render content
+})
 
 // Optional
 navigator.setCancelVisitHandler(async (location, restorationId, options) => {
-  // Handle visit cancellation
-});
+	// Handle visit cancellation
+})
 ```
 
 ### Usage
 
 ```javascript
 // Check if the navigator is enabled
-const url = new URL('/path/to/page');
+const url = new URL('/path/to/page')
 if (window.HotwireNavigator.canNavigate(url)) {
-  // Propose a visit to the native app
-  window.HotwireNavigator.visitProposedToLocation(url, { action: 'advance' });
+	// Propose a visit to the native app
+	window.HotwireNavigator.visitProposedToLocation(url, { action: 'advance' })
 }
 ```
 

@@ -6,20 +6,13 @@ import type {
 	VisitHandler,
 	VisitOptions,
 } from './types'
-import {
-	canNavigate,
-	locationWithActionIsSamePage,
-	scrollToAnchorFromLocation,
-	uuid,
-} from './utils'
+import { canNavigate, locationWithActionIsSamePage, scrollToAnchorFromLocation, uuid } from './utils'
 
 let nativeAdapter: HotwireNativeAdapter | null = null
 let restorationIdentifier = uuid()
-let scrollPositions = new Map<string, ScrollPositions>()
-let startVisitHandler: VisitHandler = async () =>
-	console.error('Start visit handler must be set')
-let cancelVisitHandler: VisitHandler = async () =>
-	console.warn('Cancel visit handler is not set')
+const scrollPositions = new Map<string, ScrollPositions>()
+let startVisitHandler: VisitHandler = async () => console.error('Start visit handler must be set')
+let cancelVisitHandler: VisitHandler = async () => console.warn('Cancel visit handler is not set')
 
 export const HotwireNavigator: HotwireNavigatorContract = {
 	canNavigate,
@@ -55,11 +48,7 @@ function handlePathCall(functionPath: string, args: unknown[]) {
 			return locationWithActionIsSamePage(args[0] as URL)
 		}
 		case 'navigator.startVisit': {
-			const visit = new HotwireVisit(
-				new URL(args[0] as string),
-				args[1] as string,
-				args[2] as VisitOptions
-			)
+			const visit = new HotwireVisit(new URL(args[0] as string), args[1] as string, args[2] as VisitOptions)
 			return nativeAdapter?.visitStarted(visit)
 		}
 		case 'navigator.view.scrollToAnchorFromLocation': {
@@ -70,7 +59,7 @@ function handlePathCall(functionPath: string, args: unknown[]) {
 	return undefined
 }
 
-function handlePathAccess(path: string): any {
+function handlePathAccess(path: string): unknown {
 	switch (path) {
 		case 'navigator.restorationIdentifier': {
 			return restorationIdentifier
@@ -83,7 +72,7 @@ function handlePathAccess(path: string): any {
 }
 
 function createNestedProxy(path: string = '') {
-	return new Proxy(function () { }, {
+	return new Proxy(function () {}, {
 		apply(_target, _thisArg, args) {
 			handlePathCall(path, args)
 		},
@@ -97,13 +86,10 @@ function createNestedProxy(path: string = '') {
 
 function storeScrollPositions(restorationIdentifier: string) {
 	const elementScrollPositions: ScrollPositions = new Map()
-	elementScrollPositions.set('html', [
-		document.documentElement.scrollLeft,
-		document.documentElement.scrollTop,
-	])
+	elementScrollPositions.set('html', [document.documentElement.scrollLeft, document.documentElement.scrollTop])
 	document.querySelectorAll('[data-scroll-id]').forEach((element) => {
-		const left = element.scrollLeft;
-		const top = element.scrollTop;
+		const left = element.scrollLeft
+		const top = element.scrollTop
 		const scrollId = (element as HTMLElement).dataset['scroll-id']
 		if (scrollId) {
 			elementScrollPositions.set(`[data-scroll-id="${scrollId}"]`, [left, top])
@@ -139,11 +125,7 @@ class HotwireVisit implements Visit {
 	}
 	private async startVisit() {
 		storeScrollPositions(restorationIdentifier)
-		await startVisitHandler(
-			this.location,
-			this.restorationIdentifier,
-			this.options
-		)
+		await startVisitHandler(this.location, this.restorationIdentifier, this.options)
 		restorationIdentifier = this.restorationIdentifier
 	}
 	private async restore() {
@@ -152,8 +134,7 @@ class HotwireVisit implements Visit {
 	}
 	issueRequest() {
 		nativeAdapter?.visitRequestStarted(this)
-		let operation =
-			this.options.action === 'restore' ? this.restore() : this.startVisit()
+		const operation = this.options.action === 'restore' ? this.restore() : this.startVisit()
 		operation
 			.then(() => {
 				nativeAdapter?.visitRequestCompleted(this)
@@ -182,11 +163,7 @@ class HotwireVisit implements Visit {
 		// Noop
 	}
 	cancel() {
-		return cancelVisitHandler(
-			this.location,
-			this.restorationIdentifier,
-			this.options
-		)
+		return cancelVisitHandler(this.location, this.restorationIdentifier, this.options)
 	}
 }
 
