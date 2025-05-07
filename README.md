@@ -56,6 +56,7 @@ if (window.HotwireNavigator.canNavigate(url)) {
 - `HotwireNavigator.visitProposedToLocation(location, options)`: Proposes a visit to the native adapter. You should check if HotwireNavigator can navigate to the location before calling this method. This method will inform the native app to begin screen transitions, and the native app will then call the visit handler you set up where you would do the actual navigation.
 - `HotwireNavigator.formSubmissionStarted(location)`: Notifies the app that a form submission has started
 - `HotwireNavigator.formSubmissionFinished(location)`: Notifies the app that a form submission has finished
+- `HotwireNative.web.send(component, event, data, callback)`: Sends a message to the native app. The callback will be called with the response from the native app.
 
 ## Contributing
 
