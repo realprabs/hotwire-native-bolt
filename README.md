@@ -1,6 +1,6 @@
 # Hotwire Native Bolt
 
-[![CI](https://github.com/jaysson/hotwire-native-bolt/actions/workflows/main.yml/badge.svg)](https://github.com/jaysson/hotwire-native-bolt/actions/workflows/main.yml)
+[![CI](https://github.com/realprabs/hotwire-native-bolt/actions/workflows/main.yml/badge.svg)](https://github.com/realprabs/hotwire-native-bolt/actions/workflows/main.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![npm version](https://badge.fury.io/js/hotwire-native-bolt.svg)](https://badge.fury.io/js/hotwire-native-bolt)
 

@@ -30,7 +30,20 @@
 		"trailingComma": "es5"
 	},
 	"name": "hotwire-native-bolt",
+	"description": "A lightweight JavaScript bridge for Hotwire-powered native applications",
 	"author": "Prabhakar Bhat",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/realprabs/hotwire-native-bolt.git"
+	},
+	"keywords": [
+		"hotwire",
+		"turbo",
+		"native",
+		"bridge",
+		"webview",
+		"mobile"
+	],
 	"devDependencies": {
 		"@rollup/plugin-node-resolve": "^16.0.1",
 		"@typescript-eslint/eslint-plugin": "^8.32.0",
