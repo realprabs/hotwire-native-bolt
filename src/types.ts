@@ -62,7 +62,7 @@ export interface BridgeMessage {
 	id?: string
 	component: string
 	event: string
-	data: JSONValue
+	data?: JSONObject
 	callback?: BridgeMessageCallback
 }
 export interface BridgeAdapter {

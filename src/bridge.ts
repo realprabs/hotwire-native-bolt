@@ -42,7 +42,12 @@ export class Bridge {
 			id: id,
 			component: component,
 			event: event,
-			data: data || {},
+			data: {
+				...data,
+				metadata: {
+					url: window.location.href
+				}
+			},
 		}
 		this.#adapter.receive(message)
 
