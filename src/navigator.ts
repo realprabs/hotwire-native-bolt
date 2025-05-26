@@ -110,7 +110,7 @@ class HotwireVisit implements Visit {
 	identifier = uuid()
 	options: VisitOptions
 	hasCachedSnapshot() {
-		return false
+		return true
 	}
 	isPageRefresh: boolean
 	restorationIdentifier: string
