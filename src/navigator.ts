@@ -90,7 +90,7 @@ function storeScrollPositions(restorationIdentifier: string) {
 	document.querySelectorAll('[data-scroll-id]').forEach((element) => {
 		const left = element.scrollLeft
 		const top = element.scrollTop
-		const scrollId = (element as HTMLElement).dataset['scroll-id']
+		const scrollId = (element as HTMLElement).dataset.scrollId
 		if (scrollId) {
 			elementScrollPositions.set(`[data-scroll-id="${scrollId}"]`, [left, top])
 		}
