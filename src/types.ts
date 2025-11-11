@@ -1,8 +1,3 @@
-type ScrollLeft = number
-type ScrollTop = number
-type ScrollPosition = [ScrollLeft, ScrollTop]
-type Selector = string
-
 export type JSONValue = string | number | boolean | null | JSONObject | JSONArray
 
 interface JSONObject {
@@ -11,16 +6,13 @@ interface JSONObject {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface JSONArray extends Array<JSONValue> {}
 
-export type ScrollPositions = Map<Selector, ScrollPosition>
 export type VisitHandler = (location: URL, restorationIdentifier: string, options: VisitOptions) => Promise<unknown>
 
 export interface HotwireNavigatorContract {
 	enabled: boolean
 	canNavigate(location: URL): boolean
 	setStartVisitHandler(handler: VisitHandler): unknown
-	setCancelVisitHandler(
-		handler: (location: URL, restorationIdentifier: string, options: VisitOptions) => Promise<unknown>
-	): unknown
+	setCancelVisitHandler(handler: VisitHandler): unknown
 	visitProposedToLocation(location: URL, options?: { action?: VisitOptions['action'] }): unknown
 	formSubmissionStarted(location: URL): unknown
 	formSubmissionFinished(location: URL): unknown

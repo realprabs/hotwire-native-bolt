@@ -1,42 +1,93 @@
 import type {
 	HotwireNativeAdapter,
 	HotwireNavigatorContract,
-	ScrollPositions,
 	Visit,
 	VisitHandler,
 	VisitOptions,
 } from './types'
 import { canNavigate, locationWithActionIsSamePage, scrollToAnchorFromLocation, uuid } from './utils'
 
+// ============================================================================
+// Module State
+// ============================================================================
+
 let nativeAdapter: HotwireNativeAdapter | null = null
 let restorationIdentifier = uuid()
-const scrollPositions = new Map<string, ScrollPositions>()
+let currentHistoryIndex = 0
+const STORAGE_KEY = 'hotwire-native-bolt:restoration-mapping'
+const HISTORY_INDEX_KEY = 'hotwire-native-bolt:current-history-index'
 let startVisitHandler: VisitHandler = async () => console.error('Start visit handler must be set')
 let cancelVisitHandler: VisitHandler = async () => console.warn('Cancel visit handler is not set')
 
-export const HotwireNavigator: HotwireNavigatorContract = {
-	canNavigate,
-	get enabled() {
-		return !!nativeAdapter
-	},
-	setStartVisitHandler(handler: VisitHandler) {
-		startVisitHandler = handler
-	},
-	setCancelVisitHandler(handler) {
-		cancelVisitHandler = handler
-	},
-	visitProposedToLocation(location, options) {
-		nativeAdapter?.visitProposedToLocation(location, {
-			action: options?.action ?? 'advance',
-		})
-	},
-	formSubmissionStarted(location: URL) {
-		nativeAdapter?.formSubmissionStarted({ location })
-	},
-	formSubmissionFinished(location: URL) {
-		nativeAdapter?.formSubmissionFinished({ location })
-	},
+// ============================================================================
+// History & Restoration Management
+// ============================================================================
+
+function initializeHistoryIndex() {
+	const stored = sessionStorage.getItem(HISTORY_INDEX_KEY)
+	if (!stored) return
+
+	const parsed = parseInt(stored, 10)
+	if (isNaN(parsed)) return
+
+	currentHistoryIndex = parsed
 }
+
+function saveHistoryIndex(index: number) {
+	sessionStorage.setItem(HISTORY_INDEX_KEY, index.toString())
+}
+
+function getStorageMapping(): Record<string, number> {
+	const stored = sessionStorage.getItem(STORAGE_KEY)
+	if (!stored) return {}
+
+	return JSON.parse(stored) as Record<string, number>
+}
+
+function setStorageMapping(mapping: Record<string, number>) {
+	sessionStorage.setItem(STORAGE_KEY, JSON.stringify(mapping))
+}
+
+function saveRestorationMapping(restorationId: string, index: number) {
+	const mapping = getStorageMapping()
+	mapping[restorationId] = index
+	setStorageMapping(mapping)
+}
+
+function getHistoryIndexForRestorationId(restorationId: string): number | undefined {
+	const mapping = getStorageMapping()
+	return mapping[restorationId]
+}
+
+function invalidateFutureHistory(fromIndex: number) {
+	const mapping = getStorageMapping()
+	const validEntries = Object.entries(mapping).filter(([, index]) => index <= fromIndex)
+	const filtered = Object.fromEntries(validEntries)
+	setStorageMapping(filtered)
+}
+
+function waitForHistoryNavigation(): Promise<void> {
+	return new Promise<void>((resolve) => {
+		const onPopState = () => {
+			window.removeEventListener('popstate', onPopState)
+			resolve()
+		}
+		window.addEventListener('popstate', onPopState)
+	})
+}
+
+// Initialize on module load
+initializeHistoryIndex()
+
+// Save mapping for the initial page if we're at index 0
+// This ensures the first page can be restored to
+if (currentHistoryIndex === 0) {
+	saveRestorationMapping(restorationIdentifier, 0)
+}
+
+// ============================================================================
+// Turbo Proxy (for framework compatibility)
+// ============================================================================
 
 function handlePathCall(functionPath: string, args: unknown[]) {
 	switch (functionPath) {
@@ -74,37 +125,20 @@ function handlePathAccess(path: string): unknown {
 function createNestedProxy(path: string = '') {
 	return new Proxy(function () {}, {
 		apply(_target, _thisArg, args) {
-			handlePathCall(path, args)
+			return handlePathCall(path, args)
 		},
 		get(_target, prop, _receiver) {
-			if (typeof prop === 'symbol') return
+			if (typeof prop === 'symbol') return undefined
+
 			const newPath = path ? `${path}.${prop}` : `${prop}`
 			return handlePathAccess(newPath)
 		},
 	})
 }
 
-function storeScrollPositions(restorationIdentifier: string) {
-	const elementScrollPositions: ScrollPositions = new Map()
-	elementScrollPositions.set('html', [document.documentElement.scrollLeft, document.documentElement.scrollTop])
-	document.querySelectorAll('[data-scroll-id]').forEach((element) => {
-		const left = element.scrollLeft
-		const top = element.scrollTop
-		const scrollId = (element as HTMLElement).dataset.scrollId
-		if (scrollId) {
-			elementScrollPositions.set(`[data-scroll-id="${scrollId}"]`, [left, top])
-		}
-	})
-	scrollPositions.set(restorationIdentifier, elementScrollPositions)
-}
-
-function restoreScrollPositions(restorationIdentifier: string) {
-	const elementScrollPositions = scrollPositions.get(restorationIdentifier)
-	elementScrollPositions?.forEach(([left, top], selector) => {
-		document.querySelector(selector)?.scrollTo({ left, top })
-	})
-	scrollPositions.delete(restorationIdentifier)
-}
+// ============================================================================
+// HotwireVisit Class
+// ============================================================================
 
 class HotwireVisit implements Visit {
 	identifier = uuid()
@@ -114,6 +148,7 @@ class HotwireVisit implements Visit {
 	}
 	isPageRefresh: boolean
 	restorationIdentifier: string
+
 	constructor(
 		public location: URL,
 		restorationIdentifier = '',
@@ -123,35 +158,95 @@ class HotwireVisit implements Visit {
 		this.options = options
 		this.isPageRefresh = options.action === 'replace'
 	}
-	private async startVisit() {
-		storeScrollPositions(restorationIdentifier)
+
+	async #startVisit() {
 		await startVisitHandler(this.location, this.restorationIdentifier, this.options)
+
+		if (this.options.action === 'replace') {
+			this.#replaceCurrentHistoryEntry()
+		} else {
+			this.#advanceToNextHistoryEntry()
+		}
+
 		restorationIdentifier = this.restorationIdentifier
 	}
-	private async restore() {
-		await this.startVisit()
-		restoreScrollPositions(this.restorationIdentifier)
+
+	#replaceCurrentHistoryEntry() {
+		const mapping = getStorageMapping()
+		const entriesWithoutCurrent = Object.entries(mapping).filter(([, index]) => index !== currentHistoryIndex)
+		const filtered = Object.fromEntries(entriesWithoutCurrent)
+		filtered[this.restorationIdentifier] = currentHistoryIndex
+		setStorageMapping(filtered)
 	}
+
+	#advanceToNextHistoryEntry() {
+		currentHistoryIndex++
+		saveHistoryIndex(currentHistoryIndex)
+		saveRestorationMapping(this.restorationIdentifier, currentHistoryIndex)
+	}
+
+	async #restore() {
+		const targetIndex = getHistoryIndexForRestorationId(this.restorationIdentifier)
+		if (targetIndex === undefined) return this.#fallbackToStartVisit('No history index found')
+
+		const delta = targetIndex - currentHistoryIndex
+		if (delta >= 0) return this.#fallbackToStartVisit('Cannot navigate forward in history')
+
+		await this.#navigateBackInHistory(delta)
+		this.#updateHistoryState(targetIndex)
+		await startVisitHandler(this.location, this.restorationIdentifier, this.options)
+	}
+
+	async #fallbackToStartVisit(reason: string) {
+		console.warn(`${reason} for restorationIdentifier: ${this.restorationIdentifier}, deferring to start visit`)
+		return this.#startVisit()
+	}
+
+	async #navigateBackInHistory(delta: number) {
+		const navigationPromise = waitForHistoryNavigation()
+		history.go(delta)
+		await navigationPromise
+	}
+
+	#updateHistoryState(targetIndex: number) {
+		invalidateFutureHistory(targetIndex)
+		currentHistoryIndex = targetIndex
+		saveHistoryIndex(currentHistoryIndex)
+		restorationIdentifier = this.restorationIdentifier
+	}
+
 	issueRequest() {
 		nativeAdapter?.visitRequestStarted(this)
-		const operation = this.options.action === 'restore' ? this.restore() : this.startVisit()
+		const operation = this.options.action === 'restore' ? this.#restore() : this.#startVisit()
+
 		operation
-			.then(() => {
-				nativeAdapter?.visitRequestCompleted(this)
-				nativeAdapter?.visitRequestFinished(this)
-				nativeAdapter?.visitRendered(this)
-			})
-			.catch((e) => {
-				let statusCode = 500
-				if ('status' in e && typeof e.status === 'number') {
-					statusCode = e.status
-				}
-				nativeAdapter?.visitRequestFailedWithStatusCode(this, statusCode)
-			})
-			.finally(() => {
-				nativeAdapter?.visitCompleted(this)
-			})
+			.then(this.#handleSuccessfulVisit)
+			.catch(this.#handleFailedVisit)
+			.finally(this.#visitCompleted)
 	}
+
+	#handleSuccessfulVisit = () => {
+		nativeAdapter?.visitRequestCompleted(this)
+		nativeAdapter?.visitRequestFinished(this)
+		nativeAdapter?.visitRendered(this)
+	}
+
+	#handleFailedVisit = (error: unknown) => {
+		const statusCode = this.#extractStatusCode(error)
+		nativeAdapter?.visitRequestFailedWithStatusCode(this, statusCode)
+	}
+
+	#visitCompleted = () => {
+		nativeAdapter?.visitCompleted(this)
+	}
+
+	#extractStatusCode(error: unknown): number {
+		if (typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number') {
+			return error.status
+		}
+		return 500
+	}
+
 	// Frameworks like sveltekit and nextjs manage their own history and snapshots.
 	changeHistory() {
 		// Noop
@@ -165,6 +260,34 @@ class HotwireVisit implements Visit {
 	cancel() {
 		return cancelVisitHandler(this.location, this.restorationIdentifier, this.options)
 	}
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+export const HotwireNavigator: HotwireNavigatorContract = {
+	canNavigate,
+	get enabled() {
+		return !!nativeAdapter
+	},
+	setStartVisitHandler(handler: VisitHandler) {
+		startVisitHandler = handler
+	},
+	setCancelVisitHandler(handler) {
+		cancelVisitHandler = handler
+	},
+	visitProposedToLocation(location, options) {
+		nativeAdapter?.visitProposedToLocation(location, {
+			action: options?.action ?? 'advance',
+		})
+	},
+	formSubmissionStarted(location: URL) {
+		nativeAdapter?.formSubmissionStarted({ location })
+	},
+	formSubmissionFinished(location: URL) {
+		nativeAdapter?.formSubmissionFinished({ location })
+	},
 }
 
 export function createTurbo() {
