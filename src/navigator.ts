@@ -7,6 +7,10 @@ import type {
 } from './types'
 import { canNavigate, locationWithActionIsSamePage, scrollToAnchorFromLocation, uuid } from './utils'
 
+// ============================================================================
+// Module State
+// ============================================================================
+
 let nativeAdapter: HotwireNativeAdapter | null = null
 let restorationIdentifier = uuid()
 let currentHistoryIndex = 0
@@ -15,28 +19,61 @@ const HISTORY_INDEX_KEY = 'hotwire-native-bolt:current-history-index'
 let startVisitHandler: VisitHandler = async () => console.error('Start visit handler must be set')
 let cancelVisitHandler: VisitHandler = async () => console.warn('Cancel visit handler is not set')
 
-// Initialize currentHistoryIndex from sessionStorage if available
+// ============================================================================
+// History & Restoration Management
+// ============================================================================
+
 function initializeHistoryIndex() {
-	try {
-		const stored = sessionStorage.getItem(HISTORY_INDEX_KEY)
-		if (stored !== null) {
-			const parsed = parseInt(stored, 10)
-			if (!isNaN(parsed)) {
-				currentHistoryIndex = parsed
-			}
-		}
-	} catch (e) {
-		console.warn('Failed to load current history index from sessionStorage:', e)
-	}
+	const stored = sessionStorage.getItem(HISTORY_INDEX_KEY)
+	if (!stored) return
+
+	const parsed = parseInt(stored, 10)
+	if (isNaN(parsed)) return
+
+	currentHistoryIndex = parsed
 }
 
-// Save currentHistoryIndex to sessionStorage
 function saveHistoryIndex(index: number) {
-	try {
-		sessionStorage.setItem(HISTORY_INDEX_KEY, index.toString())
-	} catch (e) {
-		console.warn('Failed to save current history index to sessionStorage:', e)
-	}
+	sessionStorage.setItem(HISTORY_INDEX_KEY, index.toString())
+}
+
+function getStorageMapping(): Record<string, number> {
+	const stored = sessionStorage.getItem(STORAGE_KEY)
+	if (!stored) return {}
+
+	return JSON.parse(stored) as Record<string, number>
+}
+
+function setStorageMapping(mapping: Record<string, number>) {
+	sessionStorage.setItem(STORAGE_KEY, JSON.stringify(mapping))
+}
+
+function saveRestorationMapping(restorationId: string, index: number) {
+	const mapping = getStorageMapping()
+	mapping[restorationId] = index
+	setStorageMapping(mapping)
+}
+
+function getHistoryIndexForRestorationId(restorationId: string): number | undefined {
+	const mapping = getStorageMapping()
+	return mapping[restorationId]
+}
+
+function invalidateFutureHistory(fromIndex: number) {
+	const mapping = getStorageMapping()
+	const validEntries = Object.entries(mapping).filter(([, index]) => index <= fromIndex)
+	const filtered = Object.fromEntries(validEntries)
+	setStorageMapping(filtered)
+}
+
+function waitForHistoryNavigation(): Promise<void> {
+	return new Promise<void>((resolve) => {
+		const onPopState = () => {
+			window.removeEventListener('popstate', onPopState)
+			resolve()
+		}
+		window.addEventListener('popstate', onPopState)
+	})
 }
 
 // Initialize on module load
@@ -47,6 +84,10 @@ initializeHistoryIndex()
 if (currentHistoryIndex === 0) {
 	saveRestorationMapping(restorationIdentifier, 0)
 }
+
+// ============================================================================
+// Turbo Proxy (for framework compatibility)
+// ============================================================================
 
 function handlePathCall(functionPath: string, args: unknown[]) {
 	switch (functionPath) {
@@ -87,57 +128,17 @@ function createNestedProxy(path: string = '') {
 			return handlePathCall(path, args)
 		},
 		get(_target, prop, _receiver) {
-			if (typeof prop === 'symbol') return
+			if (typeof prop === 'symbol') return undefined
+
 			const newPath = path ? `${path}.${prop}` : `${prop}`
 			return handlePathAccess(newPath)
 		},
 	})
 }
 
-function getStorageMapping(): Record<string, number> {
-	try {
-		const stored = sessionStorage.getItem(STORAGE_KEY)
-		return stored ? (JSON.parse(stored) as Record<string, number>) : {}
-	} catch (e) {
-		console.warn('Failed to load restoration mapping from sessionStorage:', e)
-		return {}
-	}
-}
-
-function setStorageMapping(mapping: Record<string, number>) {
-	try {
-		sessionStorage.setItem(STORAGE_KEY, JSON.stringify(mapping))
-	} catch (e) {
-		console.warn('Failed to save restoration mapping to sessionStorage:', e)
-	}
-}
-
-function saveRestorationMapping(restorationId: string, index: number) {
-	const mapping = getStorageMapping()
-	mapping[restorationId] = index
-	setStorageMapping(mapping)
-}
-
-function getHistoryIndexForRestorationId(restorationId: string): number | undefined {
-	const mapping = getStorageMapping()
-	return mapping[restorationId]
-}
-
-function invalidateFutureHistory(fromIndex: number) {
-	const mapping = getStorageMapping()
-	const filtered = Object.fromEntries(Object.entries(mapping).filter(([, index]) => index <= fromIndex))
-	setStorageMapping(filtered)
-}
-
-function waitForHistoryNavigation(): Promise<void> {
-	return new Promise<void>((resolve) => {
-		const onPopState = () => {
-			window.removeEventListener('popstate', onPopState)
-			resolve()
-		}
-		window.addEventListener('popstate', onPopState)
-	})
-}
+// ============================================================================
+// HotwireVisit Class
+// ============================================================================
 
 class HotwireVisit implements Visit {
 	identifier = uuid()
@@ -147,6 +148,7 @@ class HotwireVisit implements Visit {
 	}
 	isPageRefresh: boolean
 	restorationIdentifier: string
+
 	constructor(
 		public location: URL,
 		restorationIdentifier = '',
@@ -156,76 +158,95 @@ class HotwireVisit implements Visit {
 		this.options = options
 		this.isPageRefresh = options.action === 'replace'
 	}
-	private async startVisit() {
+
+	async #startVisit() {
 		await startVisitHandler(this.location, this.restorationIdentifier, this.options)
 
-		// For 'replace' action, we stay at the same index
-		// For 'advance' action, we move to the next index
 		if (this.options.action === 'replace') {
-			// Remove any existing mapping for the current index before saving the new one
-			const mapping = getStorageMapping()
-			const filtered = Object.fromEntries(
-				Object.entries(mapping).filter(([, index]) => index !== currentHistoryIndex)
-			)
-			filtered[this.restorationIdentifier] = currentHistoryIndex
-			setStorageMapping(filtered)
+			this.#replaceCurrentHistoryEntry()
 		} else {
-			currentHistoryIndex++
-			saveHistoryIndex(currentHistoryIndex)
-			saveRestorationMapping(this.restorationIdentifier, currentHistoryIndex)
+			this.#advanceToNextHistoryEntry()
 		}
 
 		restorationIdentifier = this.restorationIdentifier
 	}
-	private async restore() {
-		const targetIndex = getHistoryIndexForRestorationId(this.restorationIdentifier)
 
-		if (targetIndex === undefined) {
-			console.warn(`No history index found for restorationIdentifier: ${this.restorationIdentifier}, deferring to start visit`)
-			return this.startVisit()
-		}
+	#replaceCurrentHistoryEntry() {
+		const mapping = getStorageMapping()
+		const entriesWithoutCurrent = Object.entries(mapping).filter(([, index]) => index !== currentHistoryIndex)
+		const filtered = Object.fromEntries(entriesWithoutCurrent)
+		filtered[this.restorationIdentifier] = currentHistoryIndex
+		setStorageMapping(filtered)
+	}
+
+	#advanceToNextHistoryEntry() {
+		currentHistoryIndex++
+		saveHistoryIndex(currentHistoryIndex)
+		saveRestorationMapping(this.restorationIdentifier, currentHistoryIndex)
+	}
+
+	async #restore() {
+		const targetIndex = getHistoryIndexForRestorationId(this.restorationIdentifier)
+		if (targetIndex === undefined) return this.#fallbackToStartVisit('No history index found')
 
 		const delta = targetIndex - currentHistoryIndex
+		if (delta >= 0) return this.#fallbackToStartVisit('Cannot navigate forward in history')
 
-		if (delta >= 0) {
-			console.warn('Cannot navigate forward in history. Delta must be negative.')
-			return this.startVisit()
-		}
+		await this.#navigateBackInHistory(delta)
+		this.#updateHistoryState(targetIndex)
+		await startVisitHandler(this.location, this.restorationIdentifier, this.options)
+	}
 
-		// Wait for navigation to complete
+	async #fallbackToStartVisit(reason: string) {
+		console.warn(`${reason} for restorationIdentifier: ${this.restorationIdentifier}, deferring to start visit`)
+		return this.#startVisit()
+	}
+
+	async #navigateBackInHistory(delta: number) {
 		const navigationPromise = waitForHistoryNavigation()
-		// Navigate back in history after listener is set up
 		history.go(delta)
 		await navigationPromise
+	}
 
-		// Invalidate future history entries
+	#updateHistoryState(targetIndex: number) {
 		invalidateFutureHistory(targetIndex)
 		currentHistoryIndex = targetIndex
 		saveHistoryIndex(currentHistoryIndex)
 		restorationIdentifier = this.restorationIdentifier
-
-		await startVisitHandler(this.location, this.restorationIdentifier, this.options)
 	}
+
 	issueRequest() {
 		nativeAdapter?.visitRequestStarted(this)
-		const operation = this.options.action === 'restore' ? this.restore() : this.startVisit()
+		const operation = this.options.action === 'restore' ? this.#restore() : this.#startVisit()
+
 		operation
-			.then(() => {
-				nativeAdapter?.visitRequestCompleted(this)
-				nativeAdapter?.visitRequestFinished(this)
-				nativeAdapter?.visitRendered(this)
-			})
-			.catch((e) => {
-				let statusCode = 500
-				if ('status' in e && typeof e.status === 'number') {
-					statusCode = e.status
-				}
-				nativeAdapter?.visitRequestFailedWithStatusCode(this, statusCode)
-			})
-			.finally(() => {
-				nativeAdapter?.visitCompleted(this)
-			})
+			.then(this.#handleSuccessfulVisit)
+			.catch(this.#handleFailedVisit)
+			.finally(this.#visitCompleted)
 	}
+
+	#handleSuccessfulVisit = () => {
+		nativeAdapter?.visitRequestCompleted(this)
+		nativeAdapter?.visitRequestFinished(this)
+		nativeAdapter?.visitRendered(this)
+	}
+
+	#handleFailedVisit = (error: unknown) => {
+		const statusCode = this.#extractStatusCode(error)
+		nativeAdapter?.visitRequestFailedWithStatusCode(this, statusCode)
+	}
+
+	#visitCompleted = () => {
+		nativeAdapter?.visitCompleted(this)
+	}
+
+	#extractStatusCode(error: unknown): number {
+		if (typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number') {
+			return error.status
+		}
+		return 500
+	}
+
 	// Frameworks like sveltekit and nextjs manage their own history and snapshots.
 	changeHistory() {
 		// Noop
@@ -240,6 +261,10 @@ class HotwireVisit implements Visit {
 		return cancelVisitHandler(this.location, this.restorationIdentifier, this.options)
 	}
 }
+
+// ============================================================================
+// Public API
+// ============================================================================
 
 export const HotwireNavigator: HotwireNavigatorContract = {
 	canNavigate,
